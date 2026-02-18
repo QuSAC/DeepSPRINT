@@ -1,0 +1,41 @@
+[package]
+name = "polynomial-proving"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mybin"
+path = "src/src.rs"
+
+[dependencies]
+ark-ff = "0.5.0"
+ark-serialize = "0.5.0"
+ark-poly = "0.5.0"
+ark-std = "0.5.0"
+ark-crypto-primitives = "0.5.0"
+num-traits = "0.2"
+spongefish = { version = "0.2.0-alpha", features=["arkworks-algebra"] }
+thiserror = "2"
+rand_core = "0.9"
+bitvec = "1"
+deepfold = { path = "deepfold/deepfold" }
+util = { path = "deepfold/util" }
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "microbenches"
+harness = false
+
+[[bench]]
+name = "my_benchmark"
+harness = false
+
+[build]
+rustflags = ["-C", "target-cpu=native"]
+
+[profile.bench]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
