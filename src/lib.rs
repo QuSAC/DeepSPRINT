@@ -469,6 +469,7 @@ pub fn do_sumcheck_pok<
         *evaluation_point = merlin.challenge_scalars::<1>()?[0];
         p.fix_variable(*evaluation_point);
     }
+    // All variables should now be exhausted.
     debug_assert_eq!(p.variable_count(), 0);
 
     // The final proof evaluations. We only send 3 in the optimized case.
@@ -686,7 +687,7 @@ pub fn verify_pok<
     // We arrive at our final claim. At the point `evaluation_point`,
     // polynomial `P` must equal `sum`. Now we need to verify this.
 
-    // Obtain the polynomial openingsFINAL_ROUND_EVALUATIONS
+    // Obtain the polynomial openings
     let [b_0_i, b_0_j, b_1_i, b_1_j, mask]: [F; 5] = match mask_check_mode {
         MaskCheckMode::InsidePCS => arthur.next_scalars(),
         MaskCheckMode::Additional => {
