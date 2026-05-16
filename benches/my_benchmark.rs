@@ -1,7 +1,7 @@
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use polynomial_proving::{
-    do_sumcheck_pok, expand_keys, verify_pok, CompressedPrivateKey, RunForParamsConfig,
+    CompressedPrivateKey, PublicKey, RadicalPublicKey, RunForParamsConfig, expand_keys, prove, verify_pok
 };
 use util::{
     algebra::field::{p434, p503, p610, p751, sqisign, FftField},
@@ -22,6 +22,7 @@ fn test_prove_verify<
     const Q_VARIABLE_COUNT: usize,
     const FINAL_ROUND_EVALUATIONS: usize,
     F: FftField,
+    PK: PublicKey<F>
 >(
     c: &mut Criterion,
     name: &str,
@@ -52,7 +53,7 @@ fn test_prove_verify<
 
     c.bench_function(&proof_id, |b| {
         b.iter(|| {
-            do_sumcheck_pok::<
+            prove::<
                 VARIABLE_COUNT,
                 PATH_LENGTH,
                 PATH_LENGTH_TIMES_TWO,
@@ -63,7 +64,9 @@ fn test_prove_verify<
                 COMMITMENT_SIZE,
                 FINAL_ROUND_EVALUATIONS,
                 F,
+                RadicalPublicKey<F>
             >(
+                black_box(&public_key),
                 black_box(&private_key),
                 black_box(&random_oracle),
                 polynomial_proving::MaskCheckMode::Additional,
@@ -71,7 +74,7 @@ fn test_prove_verify<
         })
     });
 
-    let proof = do_sumcheck_pok::<
+    let proof = prove::<
         VARIABLE_COUNT,
         PATH_LENGTH,
         PATH_LENGTH_TIMES_TWO,
@@ -82,7 +85,9 @@ fn test_prove_verify<
         COMMITMENT_SIZE,
         FINAL_ROUND_EVALUATIONS,
         F,
+        RadicalPublicKey<F>
     >(
+        black_box(&public_key),
         black_box(&private_key),
         black_box(&random_oracle),
         polynomial_proving::MaskCheckMode::Additional,
@@ -102,6 +107,7 @@ fn test_prove_verify<
                 COMMITMENT_SIZE,
                 FINAL_ROUND_EVALUATIONS,
                 F,
+                RadicalPublicKey<F>
             >(
                 black_box(&public_key),
                 black_box(proof.clone()),
@@ -132,6 +138,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_SQISIGN_I.q_variable_count() },
             { CFG_SQISIGN_I.final_round_evaluations() },
             sqisign::level_i::Fp2251,
+            RadicalPublicKey<_>
         >(c, "Fp2251 (SQISign I)");
     }
     {
@@ -153,6 +160,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_SQISIGN_III.q_variable_count() },
             { CFG_SQISIGN_III.final_round_evaluations() },
             sqisign::level_iii::Fp2383,
+            RadicalPublicKey<_>
         >(c, "Fp2383 (SQISign III)");
     }
     {
@@ -174,6 +182,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_SQISIGN_V.q_variable_count() },
             { CFG_SQISIGN_V.final_round_evaluations() },
             sqisign::level_v::Fp2505,
+            RadicalPublicKey<_>
         >(c, "Fp2505 (SQISign V)");
     }
     {
@@ -195,6 +204,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_P434.q_variable_count() },
             { CFG_P434.final_round_evaluations() },
             p434::Fp2434,
+            RadicalPublicKey<_>
         >(c, "Fp2434 (path length 1024, λ=128)");
     }
     {
@@ -216,6 +226,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_P503.q_variable_count() },
             { CFG_P503.final_round_evaluations() },
             p503::Fp2503,
+            RadicalPublicKey<_>
         >(c, "Fp2503 (path length 1024, λ=128)");
     }
     {
@@ -237,6 +248,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_P610.q_variable_count() },
             { CFG_P610.final_round_evaluations() },
             p610::Fp2610,
+            RadicalPublicKey<_>
         >(c, "Fp2610 (path length 1024, λ=192)");
     }
     {
@@ -258,6 +270,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_P751.q_variable_count() },
             { CFG_P751.final_round_evaluations() },
             p751::Fp2751,
+            RadicalPublicKey<_>
         >(c, "Fp2751 (path length 2048, λ=256)");
     }
 }

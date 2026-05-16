@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use polynomial_proving::{run_for_params, RunForParamsConfig};
+use polynomial_proving::{RadicalPublicKey, RunForParamsConfig, run_for_params};
 use util::algebra::field::{arkfield::Fp2256, p434};
 
 #[test]
@@ -18,6 +18,7 @@ fn prove_and_verify() -> Result<(), Box<dyn Error>> {
         16,
         { 4 + 6 * 8 + 3 },
         Fp2256,
+        RadicalPublicKey<_>
     >(polynomial_proving::MaskCheckMode::Additional)?;
     Ok(())
 }
@@ -42,6 +43,7 @@ fn fp434() -> Result<(), Box<dyn Error>> {
         { CFG.q_variable_count() },
         { CFG.final_round_evaluations() },
         p434::Fp2434,
+        RadicalPublicKey<_>
     >(polynomial_proving::MaskCheckMode::Additional)?;
     Ok(())
 }

@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use polynomial_proving::{run_for_params, MaskCheckMode, RunForParamsConfig};
+use polynomial_proving::{run_for_params, MaskCheckMode, RadicalPublicKey, RunForParamsConfig};
 use util::algebra::field::{p434, p503, p610, p751, sqisign};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -31,6 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             { CFG_SQISIGN_I.q_variable_count() },
             { CFG_SQISIGN_I.final_round_evaluations() },
             sqisign::level_i::Fp2251,
+            RadicalPublicKey<_>,
         >(mode)?;
 
         println!("SQISign III:");
@@ -52,6 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             { CFG_SQISIGN_III.q_variable_count() },
             { CFG_SQISIGN_III.final_round_evaluations() },
             sqisign::level_iii::Fp2383,
+            RadicalPublicKey<_>,
         >(mode)?;
 
         println!("SQISign V:");
@@ -73,6 +75,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             { CFG_SQISIGN_V.q_variable_count() },
             { CFG_SQISIGN_V.final_round_evaluations() },
             sqisign::level_v::Fp2505,
+            RadicalPublicKey<_>,
         >(mode)?;
 
         println!("p434:");
@@ -94,6 +97,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             { CFG_P434.q_variable_count() },
             { CFG_P434.final_round_evaluations() },
             p434::Fp2434,
+            RadicalPublicKey<_>,
         >(mode)?;
 
         {
@@ -116,6 +120,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 { CFG_P503.q_variable_count() },
                 { CFG_P503.final_round_evaluations() },
                 p503::Fp2503,
+                RadicalPublicKey<_>,
             >(mode)?;
         }
         {
@@ -138,6 +143,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 { CFG_P610.q_variable_count() },
                 { CFG_P610.final_round_evaluations() },
                 p610::Fp2610,
+                RadicalPublicKey<_>,
             >(mode)?;
         }
         {
@@ -160,6 +166,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 { CFG_P751.q_variable_count() },
                 { CFG_P751.final_round_evaluations() },
                 p751::Fp2751,
+                RadicalPublicKey<_>,
             >(mode)?;
         }
     }

@@ -1,10 +1,15 @@
+mod keys;
 pub mod polynomials;
 
-use ark_ff::{Field, UniformRand};
+pub use keys::{
+    expand_keys, pad_walk, CompressedPrivateKey, JInvariantPublicKey, PrivateKey, PublicKey,
+    RadicalPublicKey,
+};
+
+use ark_ff::Field;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::rngs::StdRng;
-use ark_std::rand::{Rng, SeedableRng};
-use bitvec::array::BitArray;
+use ark_std::rand::SeedableRng;
 use spongefish::codecs::arkworks_algebra::{
     FieldDomainSeparator, FieldToUnitDeserialize, FieldToUnitSerialize, UnitToField,
 };
@@ -22,7 +27,7 @@ use util::{
     random_oracle::RandomOracle,
 };
 
-use crate::polynomials::piop_polynomials::{Mask, QConstructionMode, P, Q};
+use crate::polynomials::piop_polynomials::{Checker, Mask, QConstructionMode, P, Q};
 use crate::polynomials::{HypercubeEvalPoly, PiopPolynomial};
 
 /// Choose how the mask is checked. Either the linear combination is checked
@@ -90,6 +95,7 @@ pub fn run_for_params<
     const Q_VARIABLE_COUNT: usize,
     const FINAL_ROUND_EVALUATIONS: usize,
     F: FftField,
+    PK: PublicKey<F> + From<RadicalPublicKey<F>>,
 >(
     mask_check_mode: MaskCheckMode,
 ) -> Result<(), Box<dyn Error>> {
@@ -98,6 +104,7 @@ pub fn run_for_params<
         CompressedPrivateKey::<PATH_LENGTH_DIV_64>::rand(StdRng::from_entropy());
     let (public_key, private_key) = expand_keys(&compressed_private_key);
     assert!(private_key.check(&public_key));
+    let public_key: PK = public_key.into();
 
     let random_oracle = RandomOracle::new(
         &mut StdRng::from_entropy(),
@@ -105,7 +112,7 @@ pub fn run_for_params<
         SECURITY_BITS / CODE_RATE,
     );
 
-    let proof = do_sumcheck_pok::<
+    let proof = prove::<
         VARIABLE_COUNT,
         PATH_LENGTH,
         PATH_LENGTH_TIMES_TWO,
@@ -116,7 +123,8 @@ pub fn run_for_params<
         COMMITMENT_SIZE,
         FINAL_ROUND_EVALUATIONS,
         F,
-    >(&private_key, &random_oracle, mask_check_mode)?;
+        PK,
+    >(&public_key, &private_key, &random_oracle, mask_check_mode)?;
 
     println!(
         "Proof size: {} (NARG: {}, PCS: {})",
@@ -136,29 +144,12 @@ pub fn run_for_params<
         COMMITMENT_SIZE,
         FINAL_ROUND_EVALUATIONS,
         F,
+        PK,
     >(&public_key, proof, &random_oracle, mask_check_mode)?;
 
     assert!(verified);
 
     Ok(())
-}
-
-#[derive(Debug)]
-pub struct NotOneOrMinusOneError;
-
-#[derive(Eq, PartialEq, Clone, Copy)]
-pub enum OneOrMinusOne {
-    MinusOne,
-    One,
-}
-
-impl OneOrMinusOne {
-    fn into_field<F: Field>(self) -> F {
-        match self {
-            OneOrMinusOne::One => F::from(1),
-            OneOrMinusOne::MinusOne => -F::from(1),
-        }
-    }
 }
 
 /// The IO pattern determines the pattern of communication for the purposes of
@@ -168,6 +159,7 @@ fn pok_io_pattern<
     const COMMITMENT_SIZE: usize,
     const FINAL_ROUND_EVALUATIONS: usize,
     F: Field,
+    PK: PublicKey<F>,
 >(
     mask_check_mode: MaskCheckMode,
 ) -> DomainSeparator<DefaultHash> {
@@ -205,143 +197,30 @@ fn pok_io_pattern<
             );
         }
     }
-    // The proof has a variable size, so we will not include it in the
+
+    if PK::Checker::OPENING_LEN > 0 {
+        ds = FieldDomainSeparator::<F>::add_scalars(
+            ds,
+            PK::Checker::OPENING_LEN,
+            "start statement checking",
+        );
+        ds = FieldDomainSeparator::<F>::add_scalars(
+            ds,
+            PK::Checker::OPENING_LEN,
+            "end statement checking",
+        );
+    }
+
+    // The opening proof has a variable size, so we will not include it in the
     // transcript. This is not an issue, since it is the last element to be
     // sent: no verifier challenges are derived from it.
-    //ds = ds.absorb(63712, "proof");
+    // ds = ds.absorb(63712, "proof");
     ds
-}
-
-#[derive(CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq)]
-pub struct PublicKey<F: Field> {
-    end_a: F,
-    end_c: F,
-}
-
-pub struct CompressedPrivateKey<const PATH_LENGTH_DIV_64: usize>(
-    BitArray<[u64; PATH_LENGTH_DIV_64]>,
-);
-
-impl<const PATH_LENGTH_DIV_64: usize> CompressedPrivateKey<PATH_LENGTH_DIV_64> {
-    /// Generate a new private key.
-    pub fn rand(mut rng: impl Rng) -> Self {
-        let mut bits = BitArray::new([0u64; PATH_LENGTH_DIV_64]);
-        for data in bits.data.iter_mut() {
-            *data = u64::rand(&mut rng);
-        }
-        Self(bits)
-    }
-}
-
-pub struct PrivateKey<F: Field> {
-    path_a: Vec<F>,
-    path_c: Vec<F>,
-}
-
-impl<F: Field> PrivateKey<F> {
-    /// Checks if the private key is well-formed
-    pub fn check(&self, public_key: &PublicKey<F>) -> bool {
-        if !(self.path_a.last().unwrap() == &public_key.end_a
-            && self.path_c.last().unwrap() == &public_key.end_c)
-        {
-            return false;
-        }
-
-        for i in 0..self.path_a.len() - 1 {
-            if (-self.path_a[i] / F::from(12)) * (self.path_a[i + 1] - self.path_a[i])
-                != self.path_c[i] - self.path_c[i + 1] / F::from(8)
-            {
-                return false;
-            }
-            if (self.path_a[i + 1] - self.path_a[i]).square() / F::from(36) != self.path_c[i] {
-                return false;
-            }
-        }
-
-        true
-    }
-}
-
-/// Expand a private key. This will create the entire path from the directions
-/// and from the starting curve.
-pub fn expand_keys<const PATH_LENGTH_DIV_64: usize, F: Field>(
-    compressed_private_key: &CompressedPrivateKey<PATH_LENGTH_DIV_64>,
-) -> (PublicKey<F>, PrivateKey<F>) {
-    let key: Vec<OneOrMinusOne> = compressed_private_key
-        .0
-        .iter()
-        .map(|b| {
-            if *b {
-                OneOrMinusOne::One
-            } else {
-                OneOrMinusOne::MinusOne
-            }
-        })
-        // We use 255 steps
-        .skip(1)
-        .collect();
-    let (path_a, path_c) = build_path(&key);
-    let end_a = *path_a.last().unwrap();
-    let end_c = *path_c.last().unwrap();
-    (PublicKey { end_a, end_c }, PrivateKey { path_a, path_c })
-}
-
-pub fn build_path<F: Field>(key: &[OneOrMinusOne]) -> (Vec<F>, Vec<F>) {
-    let mut a = Vec::with_capacity(key.len());
-    let mut c = Vec::with_capacity(key.len());
-    a.push(F::from(4));
-    c.push(F::from(4));
-
-    let mut a_curr = a[0];
-    let mut c_curr = c[0];
-    for k in key.iter() {
-        let c_sqrt = k.into_field::<F>()
-            * (c_curr
-                .sqrt()
-                .expect("could not follow path - C_i is not a square residue"));
-        let a_next = F::from(6) * c_sqrt + a_curr;
-        let c_next = F::from(4) * c_sqrt * a_curr + F::from(8) * c_curr;
-        a.push(a_next);
-        c.push(c_next);
-        a_curr = a_next;
-        c_curr = c_next;
-    }
-
-    (a, c)
-}
-
-/// Pad a private key by length `length`.
-pub fn pad_walk<F: Field>(length: usize) -> (Vec<F>, Vec<F>) {
-    let mut a = Vec::with_capacity(length);
-    let mut c = Vec::with_capacity(length);
-    a.push(F::from(4));
-    c.push(F::from(4));
-
-    let mut a_curr = a[0];
-    let mut c_curr = c[0];
-    for _ in 0..length {
-        let mut c_sqrt = c_curr
-                .sqrt()
-                .expect("could not follow path - C_i is not a square residue");
-        c_sqrt.double_in_place();
-        let c_sqrt_6 = c_sqrt + c_sqrt + c_sqrt;
-        let a_next = c_sqrt_6 + a_curr;
-        c_curr.double_in_place();
-        c_curr.double_in_place();
-        let mut c_next = c_sqrt * a_curr + c_curr;
-        c_next.double_in_place();
-        a.push(a_next);
-        c.push(c_next);
-        a_curr = a_next;
-        c_curr = c_next;
-    }
-
-    (a, c)
 }
 
 pub fn measure_multiplications_for_exclusion<F: Field>(m: usize, mut f: F) -> F {
     for _ in 0..(2 * (m - 1)) {
-      f = f * f;
+        f = f * f;
     }
     for _ in 0..(3 * (m - 1)) {
         f = f + f;
@@ -369,7 +248,7 @@ const MESSAGE: [u8; 32] = [0; 32];
 ///
 /// # Panic
 /// Panics if the length of `a` and `b` is not the same power of 2.
-pub fn do_sumcheck_pok<
+pub fn prove<
     const VARIABLE_COUNT: usize,
     const PATH_LENGTH: usize,
     const PATH_LENGTH_TIMES_TWO: usize,
@@ -380,19 +259,20 @@ pub fn do_sumcheck_pok<
     const COMMITMENT_SIZE: usize,
     const FINAL_ROUND_EVALUATIONS: usize,
     F: FftField,
+    PK: PublicKey<F>,
 >(
+    public_key: &PK,
     private_key: &PrivateKey<F>,
     random_oracle: &RandomOracle<F>,
     mask_check_mode: MaskCheckMode,
 ) -> Result<Proof<F>, Box<dyn Error>> {
     // Sanity checking and parameter generation
-    debug_assert_eq!(private_key.path_a.len(), PATH_LENGTH);
-    debug_assert_eq!(private_key.path_c.len(), PATH_LENGTH);
+    debug_assert_eq!(private_key.len(), PATH_LENGTH);
 
     // This is the object that enables Fiat-Shamir for us. We feed it data and
     // it spits out challenges.
     let mut merlin =
-        pok_io_pattern::<LOG_2_PATH_LENGTH, COMMITMENT_SIZE, FINAL_ROUND_EVALUATIONS, F>(
+        pok_io_pattern::<LOG_2_PATH_LENGTH, COMMITMENT_SIZE, FINAL_ROUND_EVALUATIONS, F, PK>(
             mask_check_mode,
         )
         .to_prover_state();
@@ -408,19 +288,21 @@ pub fn do_sumcheck_pok<
     let mut b_0: Vec<_> = (0..PATH_LENGTH)
         .map(|_| F::rand(merlin.rng()))
         // Then comes the real witness
-        .chain(private_key.path_a.iter().copied())
+        .chain(private_key.path_a().iter().copied())
         .collect();
     debug_assert_eq!(b_0.len(), PATH_LENGTH_TIMES_TWO);
 
-    // Fix the constant term of the mask
-    let mask_part_without_constant_term = &mut b_0[..1 + 3 * VARIABLE_COUNT];
-    Mask::<VARIABLE_COUNT, F>::fix_constant_term(mask_part_without_constant_term);
-
-    let b_1: Vec<_> = (0..PATH_LENGTH)
+    let mut b_1: Vec<_> = (0..PATH_LENGTH)
         .map(|_| F::rand(merlin.rng()))
         // Then comes the real witness
-        .chain(private_key.path_c.iter().copied())
+        .chain(private_key.path_c().iter().copied())
         .collect();
+
+    public_key.fix_checker_relation(LOG_2_PATH_LENGTH, &mut b_0, &mut b_1);
+
+    // Fix the constant term of the mask
+    Mask::<VARIABLE_COUNT, F>::fix_constant_term(&mut b_0, &mut b_1);
+
     let b_0 = HypercubeEvalPoly::new(&b_0, 1 + LOG_2_PATH_LENGTH);
     let b_1 = HypercubeEvalPoly::new(&b_1, 1 + LOG_2_PATH_LENGTH);
 
@@ -445,6 +327,7 @@ pub fn do_sumcheck_pok<
     // everywhere.
     let e = merlin.challenge_scalars()?;
     let k = merlin.challenge_scalars()?;
+    let statement_checker_randomness = PK::get_checking_randomness(&mut merlin)?;
 
     let mut p = P::<
         '_,
@@ -454,8 +337,17 @@ pub fn do_sumcheck_pok<
         PATH_LENGTH,
         PATH_LENGTH_TIMES_TWO,
         Q_VARIABLE_COUNT,
-        _,
-    >::new(e, k, &b_0, &b_1, QConstructionMode::GrayCodes);
+        F,
+        PK,
+    >::new(
+        e,
+        k,
+        &b_0,
+        &b_1,
+        &statement_checker_randomness,
+        QConstructionMode::GrayCodes,
+        public_key,
+    );
 
     // Test that the constraints actually hold
     debug_assert!(p.is_system_satisfied());
@@ -474,13 +366,14 @@ pub fn do_sumcheck_pok<
 
     // The final proof evaluations. We only send 3 in the optimized case.
     let evaluations = p.final_evaluations();
+    dbg!(evaluations[4]);
     if mask_check_mode == MaskCheckMode::InsidePCS {
         merlin.add_scalars(&evaluations)?;
     } else {
         // In the non-optimized case, we send all the coefficients of the mask
         let mask_at_y_0 = evaluations[4];
         let mask_at_y_1 = p.mask().eval_with_y_eq_1(&evaluation_points);
-        merlin.add_scalars(&[mask_at_y_0, mask_at_y_1])?;
+        merlin.add_scalars(&[dbg!(mask_at_y_0), mask_at_y_1])?;
         let [r_y]: [F; 1] = merlin.challenge_scalars()?;
         let mut masked_coefficients = p.mask().masked_coefficients(r_y);
         // Note that we don't send the constant term M'(_, 0): this can be
@@ -490,6 +383,12 @@ pub fn do_sumcheck_pok<
         // relation.
         masked_coefficients.extend_from_slice(&evaluations[..4]);
         merlin.add_scalars(&masked_coefficients)?;
+    }
+
+    if PK::Checker::OPENING_LEN > 0 {
+        for checker in p.checkers() {
+            merlin.add_scalars(checker.get_openings().as_ref())?;
+        }
     }
 
     let narg = merlin.narg_string().to_vec();
@@ -615,8 +514,9 @@ pub fn verify_pok<
     const COMMITMENT_SIZE: usize,
     const FINAL_ROUND_EVALUATIONS: usize,
     F: FftField,
+    PK: PublicKey<F>,
 >(
-    _public_key: &PublicKey<F>,
+    public_key: &PK,
     proof: Proof<F>,
     random_oracle: &RandomOracle<F>,
     mask_check_mode: MaskCheckMode,
@@ -624,7 +524,7 @@ pub fn verify_pok<
     assert_eq!(VARIABLE_COUNT, LOG_2_PATH_LENGTH * 2 + 1);
 
     let mut arthur =
-        pok_io_pattern::<LOG_2_PATH_LENGTH, COMMITMENT_SIZE, FINAL_ROUND_EVALUATIONS, F>(
+        pok_io_pattern::<LOG_2_PATH_LENGTH, COMMITMENT_SIZE, FINAL_ROUND_EVALUATIONS, F, PK>(
             mask_check_mode,
         )
         .to_verifier_state(&proof.narg);
@@ -642,6 +542,7 @@ pub fn verify_pok<
 
     let [e_0, e_1]: [F; 2] = arthur.challenge_scalars()?;
     let k: [F; LOG_2_PATH_LENGTH] = arthur.challenge_scalars()?;
+    let checking_randomness = PK::challenge_randomness(&mut arthur)?;
 
     let a_a_i = P::<
         VARIABLE_COUNT,
@@ -651,6 +552,7 @@ pub fn verify_pok<
         PATH_LENGTH_TIMES_TWO,
         Q_VARIABLE_COUNT,
         F,
+        PK,
     >::a_a_i(e_1);
     let a_a_j = P::<
         VARIABLE_COUNT,
@@ -660,6 +562,7 @@ pub fn verify_pok<
         PATH_LENGTH_TIMES_TWO,
         Q_VARIABLE_COUNT,
         F,
+        PK,
     >::a_a_j(e_1);
     let a_c_j = P::<
         VARIABLE_COUNT,
@@ -669,6 +572,7 @@ pub fn verify_pok<
         PATH_LENGTH_TIMES_TWO,
         Q_VARIABLE_COUNT,
         F,
+        PK,
     >::a_c_j(e_1);
 
     // Do sumcheck
@@ -705,10 +609,13 @@ pub fn verify_pok<
                 mask_coefficients[FINAL_ROUND_EVALUATIONS - 3],
                 mask_coefficients[FINAL_ROUND_EVALUATIONS - 2],
                 mask_coefficients[FINAL_ROUND_EVALUATIONS - 1],
-                mask_0,
+                dbg!(mask_0),
             ])
         }
     }?;
+
+    let start_openings = PK::Checker::read_openings(&mut arthur)?;
+    let end_openings = PK::Checker::read_openings(&mut arthur)?;
 
     let mut eval_point = vec![evaluation_point[0], F::ZERO];
     eval_point.extend_from_slice(&evaluation_point[1..1 + LOG_2_PATH_LENGTH]);
@@ -725,12 +632,15 @@ pub fn verify_pok<
     let commitment_verifies = verifier.verify(proof.final_evaluation_proof);
 
     let q_value = Q::<0, F>::direct_eval(i, j, &k);
-    let p_value = e_0
-        * x
-        * q_value
-        * ((a_a_j * b_0_j + a_a_i * b_0_i) * (b_0_j - b_0_i) - (b_1_i + a_c_j * b_1_j))
+    let p_value = x
+        * (e_0
+            * q_value
+            * ((a_a_j * b_0_j + a_a_i * b_0_i) * (b_0_j - b_0_i) - (b_1_i + a_c_j * b_1_j))
+            + dbg!(public_key.direct_evaluate_constraints(
+                &checking_randomness,
+                &[start_openings, end_openings],
+            )))
         + mask;
-
     let piop_matches = p_value == sum;
 
     Ok(piop_matches && commitment_verifies)

@@ -2,7 +2,7 @@ use std::array;
 
 use ark_ff::{AdditiveGroup, Field};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use polynomial_proving::{interpolate_polynomial, measure_multiplications_for_exclusion, pad_walk, polynomials::{
+use polynomial_proving::{RadicalPublicKey, interpolate_polynomial, measure_multiplications_for_exclusion, pad_walk, polynomials::{
     EqFixedPoint, HypercubeEvalPoly, HypercubePoint, PiopPolynomial, piop_polynomials::{Mask, P, Q, QConstructionMode}
 }};
 use util::algebra::field::{arkfield::Fp2256, p434, p503, p610, p751};
@@ -52,24 +52,29 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let b_evals_1 = [Fp2256::from(32423); 2 * (1 << 8)];
     let poly_0 = HypercubeEvalPoly::new(&b_evals_0, 1 + 8);
     let poly_1 = HypercubeEvalPoly::new(&b_evals_1, 1 + 8);
+    let public_key = &RadicalPublicKey::from_a_c(*b_evals_0.last().unwrap(), *b_evals_1.last().unwrap());
     c.bench_function("p new", |b| {
         b.iter(|| {
-            P::<17, 9, 8, { 1 << 8 }, { 1 << 9 }, 16, _>::new(
+            P::<17, 9, 8, { 1 << 8 }, { 1 << 9 }, 16, _, RadicalPublicKey<_>>::new(
                 black_box(e),
                 black_box(k),
                 black_box(&poly_0),
                 black_box(&poly_1),
+                &(),
                 QConstructionMode::GrayCodes,
+                public_key
             )
         });
     });
 
-    let p: P<17, 9, 8, { 1 << 8 }, { 2 * (1 << 8) }, 16, Fp2256> = P::new(
+    let p: P<17, 9, 8, { 1 << 8 }, { 2 * (1 << 8) }, 16, Fp2256, RadicalPublicKey<_>> = P::new(
         black_box(e),
         black_box(k),
         black_box(&poly_0),
         black_box(&poly_1),
+        &(),
         QConstructionMode::GrayCodes,
+        &RadicalPublicKey::from_a_c(*b_evals_0.last().unwrap(), *b_evals_1.last().unwrap())
     );
     let point = [Fp2256::from(52348); 17];
     c.bench_function("p eval", |b| {
@@ -86,24 +91,28 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     });
     c.bench_function("p new then fix f", |b| {
         b.iter(|| {
-            P::<17, 9, 8, { 1 << 8 }, { 2 * (1 << 8) }, 16, Fp2256>::new(
+            P::<17, 9, 8, { 1 << 8 }, { 2 * (1 << 8) }, 16, Fp2256, _>::new(
                 black_box(e),
                 black_box(k),
                 black_box(&HypercubeEvalPoly::new(&b_evals_0, 1 + 8)),
                 black_box(&HypercubeEvalPoly::new(&b_evals_1, 1 + 8)),
+                &(),
                 QConstructionMode::GrayCodes,
+        &RadicalPublicKey::from_a_c(*b_evals_0.last().unwrap(), *b_evals_1.last().unwrap())
             )
             .fix_variable(black_box(Fp2256::from(343)))
         });
     });
     c.bench_function("p eval f then sum hypercube", |b| {
         b.iter(|| {
-            P::<17, 9, 8, { 1 << 8 }, { 2 * (1 << 8) }, 16, Fp2256>::new(
+            P::<17, 9, 8, { 1 << 8 }, { 2 * (1 << 8) }, 16, Fp2256, _>::new(
                 black_box(e),
                 black_box(k),
                 black_box(&HypercubeEvalPoly::new(&b_evals_0, 1 + 8)),
                 black_box(&HypercubeEvalPoly::new(&b_evals_1, 1 + 8)),
+                &(),
                 QConstructionMode::GrayCodes,
+        &RadicalPublicKey::from_a_c(*b_evals_0.last().unwrap(), *b_evals_1.last().unwrap())
             )
             .eval_field_then_sum_hypercube(black_box(Fp2256::from(343)))
         });
