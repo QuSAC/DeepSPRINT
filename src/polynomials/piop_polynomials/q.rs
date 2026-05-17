@@ -107,6 +107,11 @@ impl<const EVALS: usize, F: Field> PiopPolynomial<F> for Q<EVALS, F> {
     }
 
     fn eval(&self, point: &[F]) -> F {
+        if self.variable_count() == 0 {
+            return self.polyomial_over_j.get_as_const();
+        }
+
+
         self.polyomial_over_j
             .evals()
             .iter()
@@ -355,5 +360,6 @@ mod test {
             q.fix_variable(*val);
         }
         assert_eq!(q.eval_hypercube(HypercubePoint(0)), direct_eval_value);
+        assert_eq!(q.eval(&[]), direct_eval_value);
     }
 }

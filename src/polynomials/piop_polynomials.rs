@@ -15,7 +15,7 @@ mod q;
 
 pub use mask::Mask;
 pub use q::Q;
-use spongefish::{codecs::arkworks_algebra::UnitToField, ProofResult, VerifierState};
+use spongefish::{ProofResult, VerifierState, codecs::arkworks_algebra::{FieldToUnitDeserialize}};
 
 #[derive(Clone)]
 pub struct P<
@@ -47,6 +47,7 @@ pub trait Checker<F: Field> {
     fn eval_at_x(&self, x: F) -> F;
     fn fix_variable(&mut self, x: F);
     fn value(&self) -> F;
+    fn eval_then_sum_hypercube(&self, val: F) -> F;
     const OPENING_LEN: usize;
     type Openings: AsRef<[F]>;
     fn get_openings(&self) -> Self::Openings;
@@ -55,6 +56,7 @@ pub trait Checker<F: Field> {
 #[derive(Default)]
 pub struct ACChecker<F: Field> {
     _a: PhantomData<F>,
+    variables: usize
 }
 impl<F: Field> Checker<F> for ACChecker<F> {
     const OPENING_LEN: usize = 0;
@@ -62,11 +64,15 @@ impl<F: Field> Checker<F> for ACChecker<F> {
     fn get_openings(&self) -> Self::Openings {
         []
     }
-    fn eval_at_x(&self, x: F) -> F {
+    fn eval_at_x(&self, _x: F) -> F {
         F::ZERO
     }
-    fn fix_variable(&mut self, x: F) {}
+    fn fix_variable(&mut self, _x: F) {
+    }
     fn value(&self) -> F {
+        F::ZERO
+    }
+    fn eval_then_sum_hypercube(&self, _val: F) -> F {
         F::ZERO
     }
     fn read_openings(_arthur: &mut VerifierState<'_>) -> ProofResult<Self::Openings> {
@@ -88,8 +94,11 @@ impl<F: Field> Checker<F> for JInvariantChecker<F> {
     fn value(&self) -> F {
         self.value()
     }
+    fn eval_then_sum_hypercube(&self, val: F) -> F {
+        self.eval_then_sum_hypercube(val)
+    }
     fn read_openings(arthur: &mut VerifierState<'_>) -> ProofResult<Self::Openings> {
-        arthur.challenge_scalars()
+        arthur.next_scalars()
     }
 }
 
@@ -246,7 +255,7 @@ impl<
                 + self
                     .j_invariant_checkers
                     .as_ref()
-                    .iter().map(|c| c.eval_at_x(f)).sum::<F>()
+                    .iter().map(|c| c.eval_then_sum_hypercube(f)).sum::<F>()
         } else if self.b_0_i.variable_count() > 0 {
             // Subtract 1 due to the variable we will assign now
             let remaining_i_vars = self.b_0_i.variable_count() - 1;
@@ -278,7 +287,7 @@ impl<
                 + self.mask.eval_field_then_sum_hypercube(f)
                 + self
                     .j_invariant_checkers
-                    .as_ref().iter().map(|c| c.value()).sum::<F>()
+                    .as_ref().iter().map(|c| c.eval_then_sum_hypercube(f)).sum::<F>()
         } else {
             // Evaluate j
             debug_assert!(self.variable_count() > 0);
@@ -308,7 +317,7 @@ impl<
                 + self.mask.eval_field_then_sum_hypercube(f)
                 + self
                     .j_invariant_checkers
-                    .as_ref().iter().map(|c| c.value()).sum::<F>()
+                    .as_ref().iter().map(|c| c.eval_then_sum_hypercube(f)).sum::<F>()
         }
     }
 
@@ -388,7 +397,7 @@ impl<
             self.e_0
                 // x has been absorbed in e_0
                 * self.q.eval(q_eval_point)
-                * ((self.a_a_j * b_0_j + self.a_a_i * b_0_i) * (b_0_j - b_0_i) - (b_1_i + b_1_j))
+                * (self.a_a_j * b_0_j + self.a_a_i * b_0_i) * (b_0_j - b_0_i) - (b_1_i + b_1_j)
                 + self.mask.eval(point)
                 + self
                     .j_invariant_checkers
@@ -449,9 +458,6 @@ impl<
             self.mask.fix_variable(var);
             // Multiply x into e_0, to save this multiplication on every later iteration
             self.e_0 *= var;
-            for j_checker in self.j_invariant_checkers.iter_mut() {
-                j_checker.fix_variable(var);
-            }
             debug_assert_eq!(self.b_0_i.variable_count(), LOG_2_PATH_LENGTH);
             debug_assert_eq!(self.b_0_j.variable_count(), LOG_2_PATH_LENGTH);
             debug_assert_eq!(self.b_1_i.variable_count(), LOG_2_PATH_LENGTH);
@@ -481,6 +487,9 @@ impl<
                 self.b_0_j.fix_variable(var);
                 self.b_1_j.fix_variable(var);
             }
+        }
+        for j_checker in self.j_invariant_checkers.iter_mut() {
+            j_checker.fix_variable(var);
         }
         self.variable_count -= 1;
         debug_assert_eq!(

@@ -81,6 +81,18 @@ impl RunForParamsConfig {
     }
 }
 
+pub trait RunForParamsPublicKey {
+    type PK<F: Field>: PublicKey<F> + From<RadicalPublicKey<F>>;
+}
+pub struct RadicalPublicKeyConfig;
+impl RunForParamsPublicKey for RadicalPublicKeyConfig {
+    type PK<F: Field> = RadicalPublicKey<F>;
+}
+pub struct JInvariantPublicKeyConfig;
+impl RunForParamsPublicKey for JInvariantPublicKeyConfig {
+    type PK<F: Field> = JInvariantPublicKey<F>;
+}
+
 /// A convenience function to prove and then verify.
 pub fn run_for_params<
     const VARIABLE_COUNT: usize,
@@ -95,7 +107,7 @@ pub fn run_for_params<
     const Q_VARIABLE_COUNT: usize,
     const FINAL_ROUND_EVALUATIONS: usize,
     F: FftField,
-    PK: PublicKey<F> + From<RadicalPublicKey<F>>,
+    PK: RunForParamsPublicKey,
 >(
     mask_check_mode: MaskCheckMode,
 ) -> Result<(), Box<dyn Error>> {
@@ -104,7 +116,7 @@ pub fn run_for_params<
         CompressedPrivateKey::<PATH_LENGTH_DIV_64>::rand(StdRng::from_entropy());
     let (public_key, private_key) = expand_keys(&compressed_private_key);
     assert!(private_key.check(&public_key));
-    let public_key: PK = public_key.into();
+    let public_key: PK::PK<F> = public_key.into();
 
     let random_oracle = RandomOracle::new(
         &mut StdRng::from_entropy(),
@@ -123,7 +135,7 @@ pub fn run_for_params<
         COMMITMENT_SIZE,
         FINAL_ROUND_EVALUATIONS,
         F,
-        PK,
+        PK::PK<F>,
     >(&public_key, &private_key, &random_oracle, mask_check_mode)?;
 
     println!(
@@ -144,7 +156,7 @@ pub fn run_for_params<
         COMMITMENT_SIZE,
         FINAL_ROUND_EVALUATIONS,
         F,
-        PK,
+        PK::PK<F>,
     >(&public_key, proof, &random_oracle, mask_check_mode)?;
 
     assert!(verified);
@@ -168,6 +180,16 @@ fn pok_io_pattern<
     ds = ds.add_bytes(COMMITMENT_SIZE, "commitment");
     ds = FieldDomainSeparator::<F>::challenge_scalars(ds, 2, "e");
     ds = FieldDomainSeparator::<F>::challenge_scalars(ds, LOG_2_PATH_LENGTH, "k");
+    if PK::CHECKING_RANDOMNESS_SIZE > 0 {
+        for _ in 0..2 {
+            ds = FieldDomainSeparator::<F>::challenge_scalars(
+                ds,
+                PK::CHECKING_RANDOMNESS_SIZE,
+                "j invariant checking",
+            );
+        }
+    }
+
     // The rounds start with a verifier challenge and then the prover message.
     // The first round has no challenge. This is why we do one additional round
     // here.
@@ -354,26 +376,28 @@ pub fn prove<
 
     // Do sumcheck
     let mut evaluation_points = [F::ZERO; VARIABLE_COUNT];
+    //let mut sum = F::ZERO;
     for evaluation_point in evaluation_points.iter_mut() {
+        //debug_assert_eq!(p.eval_field_then_sum_hypercube(F::ZERO) + p.eval_field_then_sum_hypercube(F::ONE), sum);
         let evaluations: [F; 3] =
             array::from_fn(|i| p.eval_field_then_sum_hypercube(F::from(1 + i as u64)));
         merlin.add_scalars(&evaluations)?;
         *evaluation_point = merlin.challenge_scalars::<1>()?[0];
         p.fix_variable(*evaluation_point);
+        //sum = evaluate_poly_from_evals([sum - evaluations[0], evaluations[0], evaluations[1], evaluations[2]], *evaluation_point);
     }
     // All variables should now be exhausted.
     debug_assert_eq!(p.variable_count(), 0);
 
     // The final proof evaluations. We only send 3 in the optimized case.
     let evaluations = p.final_evaluations();
-    dbg!(evaluations[4]);
     if mask_check_mode == MaskCheckMode::InsidePCS {
         merlin.add_scalars(&evaluations)?;
     } else {
         // In the non-optimized case, we send all the coefficients of the mask
         let mask_at_y_0 = evaluations[4];
         let mask_at_y_1 = p.mask().eval_with_y_eq_1(&evaluation_points);
-        merlin.add_scalars(&[dbg!(mask_at_y_0), mask_at_y_1])?;
+        merlin.add_scalars(&[mask_at_y_0, mask_at_y_1])?;
         let [r_y]: [F; 1] = merlin.challenge_scalars()?;
         let mut masked_coefficients = p.mask().masked_coefficients(r_y);
         // Note that we don't send the constant term M'(_, 0): this can be
@@ -542,7 +566,7 @@ pub fn verify_pok<
 
     let [e_0, e_1]: [F; 2] = arthur.challenge_scalars()?;
     let k: [F; LOG_2_PATH_LENGTH] = arthur.challenge_scalars()?;
-    let checking_randomness = PK::challenge_randomness(&mut arthur)?;
+    let pk_randomness = PK::challenge_randomness(&mut arthur)?;
 
     let a_a_i = P::<
         VARIABLE_COUNT,
@@ -609,7 +633,7 @@ pub fn verify_pok<
                 mask_coefficients[FINAL_ROUND_EVALUATIONS - 3],
                 mask_coefficients[FINAL_ROUND_EVALUATIONS - 2],
                 mask_coefficients[FINAL_ROUND_EVALUATIONS - 1],
-                dbg!(mask_0),
+                mask_0,
             ])
         }
     }?;
@@ -633,13 +657,14 @@ pub fn verify_pok<
 
     let q_value = Q::<0, F>::direct_eval(i, j, &k);
     let p_value = x
-        * (e_0
-            * q_value
-            * ((a_a_j * b_0_j + a_a_i * b_0_i) * (b_0_j - b_0_i) - (b_1_i + a_c_j * b_1_j))
-            + dbg!(public_key.direct_evaluate_constraints(
-                &checking_randomness,
-                &[start_openings, end_openings],
-            )))
+        * e_0
+        * q_value
+        * ((a_a_j * b_0_j + a_a_i * b_0_i) * (b_0_j - b_0_i) - (b_1_i + a_c_j * b_1_j))
+        + public_key.direct_evaluate_constraints(
+            x,
+            &pk_randomness,
+            &[start_openings, end_openings],
+        )
         + mask;
     let piop_matches = p_value == sum;
 

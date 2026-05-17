@@ -25,7 +25,7 @@ impl<'a, const VARIABLE_COUNT: usize, F: Field> Mask<'a, VARIABLE_COUNT, F> {
     }
 
     /// Create a new mask using just the indices that are accessed.
-    fn new(b_0_mask: &'a [F], b_1_mask: &'a [F]) -> Self {
+    pub fn new(b_0_mask: &'a [F], b_1_mask: &'a [F]) -> Self {
         // The mask should have 3 coefficients per variable, plus a constant
         // term. This number is then doubled to mask the coefficient opening.
         debug_assert_eq!(b_0_mask.len(), 3 * VARIABLE_COUNT + 1);
@@ -57,12 +57,17 @@ impl<'a, const VARIABLE_COUNT: usize, F: Field> Mask<'a, VARIABLE_COUNT, F> {
         let [c, b, a] = self.b_0_mask[starting_index_first..starting_index_next]
             .try_into()
             .unwrap();
-        ((self.current_total + ((a * point + b) * point + c) * point) * F::from(2)
-            // Add the remaining variables. Precisely half the points on the
-            // hypercube will give a contribution to any sum.
-            + self.b_0_mask[starting_index_next..].iter()
-            .sum::<F>())
-            * F::from((1 << remaining_variable_count) / 2)
+        let value = self.current_total + ((a * point + b) * point + c) * point;
+        if remaining_variable_count > 0 {
+            (value + value
+                // Add the remaining variables. Precisely half the points on the
+                // hypercube will give a contribution to any sum.
+                + self.b_0_mask[starting_index_next..].iter()
+                .sum::<F>())
+                * F::from((1 << remaining_variable_count) / 2)
+        } else {
+            value
+        }
     }
 
     /// Compute the constant term that would fix the coefficients.
