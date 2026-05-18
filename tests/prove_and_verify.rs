@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use polynomial_proving::{RadicalPublicKey, RadicalPublicKeyConfig, RunForParamsConfig, run_for_params};
+use polynomial_proving::{RadicalPublicKeyConfig, RunForParamsConfig, run_for_params};
 use util::algebra::field::{arkfield::Fp2256, p434};
 
 #[test]

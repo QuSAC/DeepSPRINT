@@ -56,7 +56,6 @@ pub trait Checker<F: Field> {
 #[derive(Default)]
 pub struct ACChecker<F: Field> {
     _a: PhantomData<F>,
-    variables: usize
 }
 impl<F: Field> Checker<F> for ACChecker<F> {
     const OPENING_LEN: usize = 0;

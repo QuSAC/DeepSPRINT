@@ -73,7 +73,7 @@ impl<F: Field> PublicKey<F> for RadicalPublicKey<F> {
     type CheckingRandomness = ();
     const CHECKING_RANDOMNESS_SIZE: usize = 0;
     fn challenge_randomness(
-        verifier_state: &mut VerifierState,
+        _verifier_state: &mut VerifierState,
     ) -> Result<Self::CheckingRandomness, ProofError> {
         Ok(())
     }
@@ -100,9 +100,9 @@ impl<F: Field> PublicKey<F> for RadicalPublicKey<F> {
     }
     fn direct_evaluate_constraints(
         &self,
-        x: F,
-        randomness: &Self::CheckingRandomness,
-        openings: &[<Self::Checker as Checker<F>>::Openings; 2],
+        _x: F,
+        _randomness: &Self::CheckingRandomness,
+        _openings: &[<Self::Checker as Checker<F>>::Openings; 2],
     ) -> F {
         F::ZERO
     }
@@ -344,15 +344,18 @@ pub fn expand_keys<const PATH_LENGTH_DIV_64: usize, F: Field>(
     )
 }
 
+#[inline]
 pub fn starting_curve<F: Field>() -> (F, F) {
     (F::from(0), F::from(251948161))
 }
 
+#[inline]
 pub fn starting_j_invariant<F: Field>() -> F {
     let (a_start, c_start) = starting_curve();
     compute_j_invariant(a_start, c_start)
 }
 
+#[inline]
 pub fn build_path<F: Field>(key: &[OneOrMinusOne]) -> (Vec<F>, Vec<F>) {
     let mut a: Vec<F> = Vec::with_capacity(key.len());
     let mut c: Vec<F> = Vec::with_capacity(key.len());
@@ -360,19 +363,17 @@ pub fn build_path<F: Field>(key: &[OneOrMinusOne]) -> (Vec<F>, Vec<F>) {
     a.push(a_start);
     c.push(c_start);
 
-    let mut a_curr = a[0];
-    let mut c_curr = c[0];
+    let mut a_curr = a_start;
+    let mut c_curr = c_start;
     for k in key.iter() {
         let c_sqrt = k.into_field::<F>()
             * (c_curr
                 .sqrt()
                 .expect("could not follow path - C_i is not a square residue"));
-        let a_next = F::from(6) * c_sqrt + a_curr;
-        let c_next = F::from(4) * c_sqrt * a_curr + F::from(8) * c_curr;
-        a.push(a_next);
-        c.push(c_next);
-        a_curr = a_next;
-        c_curr = c_next;
+        c_curr = (c_curr + c_curr + c_sqrt * a_curr) * F::from(4);
+        a_curr = a_curr + F::from(6) * c_sqrt;
+        a.push(a_curr);
+        c.push(c_curr);
     }
 
     (a, c)

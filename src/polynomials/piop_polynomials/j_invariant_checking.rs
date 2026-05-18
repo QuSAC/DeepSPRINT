@@ -106,12 +106,15 @@ impl<F: Field> JInvariantChecker<F> {
 
     pub fn eval_then_sum_hypercube(&self, val: F) -> F {
         assert!(self.num_variables > 0);
-        if !self.has_first_variable_been_fixed() {
-            self.eval_at_x(val) * F::from(2u32.pow((self.num_variables - 1) as u32))
-        } else if self.num_variables == 1 {
+        if self.num_variables == 1 {
             self.value()
         } else {
-            self.value() * F::from(2u32.pow((self.num_variables - 1) as u32))
+            let factor = F::from(2u32.pow((self.num_variables - 1) as u32));
+            if !self.has_first_variable_been_fixed() {
+                factor * self.eval_at_x(val)
+            } else {
+                factor * self.value()
+            }
         }
     }
 
@@ -171,9 +174,8 @@ impl<F: Field> JInvariantChecker<F> {
         let mut val = d5 * (F::from(4) * c - d1) - F::ONE;
         val = val * h + c * d4 - F::ONE;
         val = val * h + j * d2 * (F::from(4) * c - d1)
-            - F::from(256)
-                * (-d1 * d3 + F::from(3 * 3) * c * d3 - F::from(9 * 3) * d2 * d1
-                    + F::from(27) * d2 * c);
+            + F::from(-256)
+                * (d3 * (F::from(9) * c - d1) + F::from(27) * d2 * (d1 - c));
         val = val * h + d3 - d1.pow([2]);
         val = val * h + d2 - c.pow([2]);
         val = val * h + d1 - a.pow([2]);

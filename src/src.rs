@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use polynomial_proving::{
-    run_for_params, JInvariantPublicKeyConfig, MaskCheckMode, PublicKey, RadicalPublicKey,
+    run_for_params, JInvariantPublicKeyConfig, MaskCheckMode,
     RadicalPublicKeyConfig, RunForParamsConfig, RunForParamsPublicKey,
 };
 use util::algebra::field::{p434, p503, p610, p751, sqisign};
