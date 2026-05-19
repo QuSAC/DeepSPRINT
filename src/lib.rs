@@ -463,50 +463,23 @@ pub fn deepfold_commit<const LOG_2_PATH_LENGTH: usize, F: FftField>(
 /// 2 and 3.
 fn evaluate_poly_from_evals<F: Field>(evals: [F; 4], eval_at: F) -> F {
     // First compute the coefficients
-    let mut coefficients = [F::ZERO; 4];
-    coefficients[0] = evals[0];
-    coefficients[1] = evals
-        .iter()
-        .zip(
-            [
-                -F::from(11) / F::from(6),
-                F::from(3),
-                -F::from(3) / F::from(2),
-                F::ONE / F::from(3),
-            ]
-            .iter(),
+    evals[0]
+    + eval_at * (
+        evals[0] * (-F::from(11) / F::from(6))
+        + evals[1] * F::from(3)
+        + evals[2] * (-F::from(3) / F::from(2))
+        + evals[3] * (F::ONE / F::from(3))
+        + eval_at * (
+            evals[0]
+            + evals[1] * (-F::from(5) / F::from(2))
+            + evals[2] + evals[2]
+            + evals[3] * (-F::ONE / F::from(2))
+            + eval_at * (
+                (evals[1] - evals[2]) * (F::ONE / F::from(2))
+                + (evals[3] - evals[0]) * (F::ONE / F::from(6))
+            )
         )
-        .map(|(a, b)| *a * b)
-        .sum();
-    coefficients[2] = evals
-        .iter()
-        .zip(
-            [
-                F::ONE,
-                -F::from(5) / F::from(2),
-                F::from(2),
-                -F::ONE / F::from(2),
-            ]
-            .iter(),
-        )
-        .map(|(a, b)| *a * b)
-        .sum();
-    coefficients[3] = evals
-        .iter()
-        .zip(
-            [
-                -F::ONE / F::from(6),
-                F::ONE / F::from(2),
-                -F::ONE / F::from(2),
-                F::ONE / F::from(6),
-            ]
-            .iter(),
-        )
-        .map(|(a, b)| *a * b)
-        .sum();
-
-    coefficients[0]
-        + eval_at * (coefficients[1] + eval_at * (coefficients[2] + eval_at * coefficients[3]))
+    )
 }
 
 pub fn compute_mask_value<F: Field>(coefficients: &[F], point: &[F], r_y: F) -> F {
