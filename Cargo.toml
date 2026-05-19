@@ -20,6 +20,11 @@ rand_core = "0.9"
 bitvec = "1"
 deepfold = { path = "deepfold/deepfold" }
 util = { path = "deepfold/util" }
+rayon = { version = "1.12", optional = true }
+
+[features]
+default = [] # Add "rayon" here if you want it to be enabled by default
+rayon = ["dep:rayon"]
 
 [dev-dependencies]
 criterion = "0.3"

@@ -1,4 +1,6 @@
 //! These are the polynomials that are custom for our PIOP.
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
 use std::{marker::PhantomData, ops::MulAssign};
 
 use crate::{
@@ -15,7 +17,7 @@ mod q;
 
 pub use mask::Mask;
 pub use q::Q;
-use spongefish::{ProofResult, VerifierState, codecs::arkworks_algebra::{FieldToUnitDeserialize}};
+use spongefish::{codecs::arkworks_algebra::FieldToUnitDeserialize, ProofResult, VerifierState};
 
 #[derive(Clone)]
 pub struct P<
@@ -43,7 +45,7 @@ pub struct P<
     j_invariant_checkers: [PK::Checker; 2],
 }
 
-pub trait Checker<F: Field> {
+pub trait Checker<F: Field>: Sync {
     fn eval_at_x(&self, x: F) -> F;
     fn fix_variable(&mut self, x: F);
     fn value(&self) -> F;
@@ -66,8 +68,7 @@ impl<F: Field> Checker<F> for ACChecker<F> {
     fn eval_at_x(&self, _x: F) -> F {
         F::ZERO
     }
-    fn fix_variable(&mut self, _x: F) {
-    }
+    fn fix_variable(&mut self, _x: F) {}
     fn value(&self) -> F {
         F::ZERO
     }
@@ -227,8 +228,11 @@ impl<
         if self.variable_count() == VARIABLE_COUNT {
             let x = f;
             let i_hypercube_variables_mask = (1 << LOG_2_PATH_LENGTH) - 1;
-            (0..(1 << LOG_2_PATH_LENGTH))
-                .map(HypercubePoint)
+            #[cfg(feature = "rayon")]
+            let iter = (0..(1 << LOG_2_PATH_LENGTH)).into_par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let iter = 0..(1 << LOG_2_PATH_LENGTH);
+            iter.map(HypercubePoint)
                 .map(|j| {
                     // We can compute i, since we already know that Q will be zero otherwise
                     let i_hypercube_remainder =
@@ -261,8 +265,11 @@ impl<
             let i_hypercube_variables_mask = (1 << remaining_i_vars) - 1;
             // Evaluate i
             // We can sum over j, and determine the qualifying i from this
-            (0..(1 << LOG_2_PATH_LENGTH))
-                .map(HypercubePoint)
+            #[cfg(feature = "rayon")]
+            let iter = (0..(1 << LOG_2_PATH_LENGTH)).into_par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let iter = 0..(1 << LOG_2_PATH_LENGTH);
+            iter.map(HypercubePoint)
                 .map(|j| {
                     // Now compute j, the first couple of variables are free,
                     // the others are determined by i.
@@ -295,8 +302,11 @@ impl<
             debug_assert!(self.b_0_j.variable_count() > 0);
             debug_assert!(self.b_1_j.variable_count() > 0);
             let variables_j = self.b_1_j.variable_count() - 1;
-            (0usize..(1 << variables_j))
-                .map(HypercubePoint)
+            #[cfg(feature = "rayon")]
+            let iter = (0..(1 << variables_j)).into_par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let iter = 0..(1 << variables_j);
+            iter.map(HypercubePoint)
                 .map(|j_hypercube_remainder| {
                     let b_0_i = self.b_0_i.get_as_const();
                     let b_1_i = self.b_1_i.get_as_const();
@@ -396,7 +406,8 @@ impl<
             self.e_0
                 // x has been absorbed in e_0
                 * self.q.eval(q_eval_point)
-                * (self.a_a_j * b_0_j + self.a_a_i * b_0_i) * (b_0_j - b_0_i) - (b_1_i + b_1_j)
+                * (self.a_a_j * b_0_j + self.a_a_i * b_0_i) * (b_0_j - b_0_i)
+                - (b_1_i + b_1_j)
                 + self.mask.eval(point)
                 + self
                     .j_invariant_checkers

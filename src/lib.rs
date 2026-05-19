@@ -1,3 +1,6 @@
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
 mod keys;
 pub mod polynomials;
 
@@ -672,8 +675,13 @@ pub fn verify_pok<
 }
 
 pub fn interpolate_polynomial<F: Field>(evaluations: &[F]) -> MultilinearPolynomial<F> {
-    let mut coefficients: Vec<F> = vec![F::ZERO; evaluations.len()];
-    for (index, evaluation) in evaluations.iter().enumerate() {
+    #[cfg(feature = "rayon")]
+    let iter_1 = (0..evaluations.len()).into_par_iter();
+    #[cfg(not(feature = "rayon"))]
+    let iter_1 = 0..evaluations.len();
+
+    let coefficients = iter_1
+        .map(|coef_index|
         // Add eq(i,j) * evaluations[j] to the coefficients.
         //
         // We can interpret index as a sequence of bits, specifying the
@@ -687,21 +695,17 @@ pub fn interpolate_polynomial<F: Field>(evaluations: &[F]) -> MultilinearPolynom
         // - Evaluation point bit is 0, and coef bit is 1, -1.
         // - Evaluation point bit is 1, and coef bit is 0, 0.
         // - Evaluation point bit is 1, and coef bit is 1, 1.
-        for (coef_index, coefficient) in coefficients.iter_mut().enumerate() {
-            // If there is any bit where evaluation is 1, and coef is 0, set to 0.
-            if (!coef_index) & index != 0 {
-                continue;
-            }
-
-            let mut value = *evaluation;
-            // For every bit where evaluation is 0, and coef is 1, invert.
+        // If there is any bit where evaluation is 1, and coef is 0, set to 0.
+        evaluations.iter().copied().enumerate()
+            .filter(|(index, _)| (!coef_index) & index == 0)
+            .map(|(index, evaluation)|
             if ((!index) & coef_index).count_ones() % 2 == 1 {
-                value = -value;
+                -evaluation
+            } else {
+                evaluation
             }
-
-            *coefficient += value;
-        }
-    }
+        ).sum())
+        .collect();
     MultilinearPolynomial::new(coefficients)
 }
 
