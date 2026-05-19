@@ -87,7 +87,7 @@ impl MyField for M31ext {
     }
 
     #[inline]
-    fn from_hash(hash: [u8; crate::merkle_tree::MERKLE_ROOT_SIZE]) -> Self {
+    fn from_hash(_hash: [u8; crate::merkle_tree::MERKLE_ROOT_SIZE]) -> Self {
         todo!()
         // Self(F::deserialize(&hash.into()))
     }

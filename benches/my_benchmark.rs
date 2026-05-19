@@ -1,3 +1,4 @@
+use ark_ff::Field;
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use polynomial_proving::{
@@ -9,6 +10,47 @@ use util::{
     random_oracle::RandomOracle,
     CODE_RATE,
 };
+
+#[cfg(feature = "rayon")]
+const PARALLEL: &str = "(parallel)";
+#[cfg(not(feature = "rayon"))]
+const PARALLEL: &str = "(single thread)";
+
+trait FieldName {
+    const FIELD_NAME: &str;
+}
+
+impl FieldName for sqisign::level_i::Fp2251 {
+    const FIELD_NAME: &str = "5·2²⁴⁸-1 (SQIsign I)";
+}
+impl FieldName for sqisign::level_iii::Fp2383 {
+    const FIELD_NAME: &str = "65·2³⁷⁶-1 (SQIsign III)";
+}
+impl FieldName for sqisign::level_v::Fp2505 {
+    const FIELD_NAME: &str = "27·2⁵⁰⁰-1 (SQIsign V)";
+}
+impl FieldName for p434::Fp2434 {
+    const FIELD_NAME: &str = "2²¹⁶·3¹³⁷-1 (p434)";
+}
+impl FieldName for p503::Fp2503 {
+    const FIELD_NAME: &str = "2²⁵⁰·3¹⁵⁹-1 (p503)";
+}
+impl FieldName for p610::Fp2610 {
+    const FIELD_NAME: &str = "2³⁰⁵·3¹⁹²-1 (p610)";
+}
+impl FieldName for p751::Fp2751 {
+    const FIELD_NAME: &str = "2³⁷²·3²³⁹-1 (p751)";
+}
+
+trait PublicKeyName {
+    const NAME: &str;
+}
+impl<F: Field> PublicKeyName for RadicalPublicKey<F> {
+    const NAME: &str = "pk=(A, C)";
+}
+impl<F: Field> PublicKeyName for JInvariantPublicKey<F> {
+    const NAME: &str = "pk=j";
+}
 
 fn test_prove_verify<
     const VARIABLE_COUNT: usize,
@@ -22,11 +64,10 @@ fn test_prove_verify<
     const COMMITMENT_SIZE: usize,
     const Q_VARIABLE_COUNT: usize,
     const FINAL_ROUND_EVALUATIONS: usize,
-    F: FftField,
-    PK: PublicKey<F>,
+    F: FftField + FieldName,
+    PK: PublicKey<F> + PublicKeyName,
 >(
     c: &mut Criterion,
-    name: &str,
 ) {
     // Generate the public and private key
     let compressed_private_key =
@@ -34,7 +75,16 @@ fn test_prove_verify<
     let (public_key, private_key) = expand_keys(&compressed_private_key);
     assert!(private_key.check(&public_key));
 
-    let keygen_id = format!("{name}: keygen ({} bits security)", SECURITY_BITS);
+    let id_for_function = |func| format!(
+        "{}, e={}, λ={}, {}, {}: {func}",
+        F::FIELD_NAME,
+        PATH_LENGTH,
+        SECURITY_BITS,
+        PK::NAME,
+        PARALLEL
+    );
+
+    let keygen_id = id_for_function("keygen");
     c.bench_function(&keygen_id, |b| {
         b.iter(|| {
             let compressed_private_key =
@@ -49,10 +99,10 @@ fn test_prove_verify<
         SECURITY_BITS / CODE_RATE,
     );
 
-    let proof_id = format!("{name}: prove ({} bits security)", SECURITY_BITS);
-    let verify_id = format!("{name}: verify ({} bits security)", SECURITY_BITS);
+    let prove_id = id_for_function("prove");
+    let verify_id = id_for_function("verify");
 
-    c.bench_function(&proof_id, |b| {
+    c.bench_function(&prove_id, |b| {
         b.iter(|| {
             prove::<
                 VARIABLE_COUNT,
@@ -140,7 +190,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_SQISIGN_I.final_round_evaluations() },
             sqisign::level_i::Fp2251,
             RadicalPublicKey<_>,
-        >(c, "Fp2251 (SQISign I) (Radical Public Key)");
+        >(c);
         test_prove_verify::<
             { CFG_SQISIGN_I.variable_count() },
             { CFG_SQISIGN_I.path_length() },
@@ -155,7 +205,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_SQISIGN_I.final_round_evaluations() },
             sqisign::level_i::Fp2251,
             JInvariantPublicKey<_>,
-        >(c, "Fp2251 (SQISign I) (J-invariant Public Key)");
+        >(c);
     }
     {
         const CFG_SQISIGN_III: RunForParamsConfig = RunForParamsConfig {
@@ -177,7 +227,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_SQISIGN_III.final_round_evaluations() },
             sqisign::level_iii::Fp2383,
             RadicalPublicKey<_>,
-        >(c, "Fp2383 (SQISign III) (Radical Public Key)");
+        >(c);
         test_prove_verify::<
             { CFG_SQISIGN_III.variable_count() },
             { CFG_SQISIGN_III.path_length() },
@@ -192,7 +242,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_SQISIGN_III.final_round_evaluations() },
             sqisign::level_iii::Fp2383,
             JInvariantPublicKey<_>,
-        >(c, "Fp2383 (SQISign III) (J-invariant Public Key)");
+        >(c);
     }
     {
         const CFG_SQISIGN_V: RunForParamsConfig = RunForParamsConfig {
@@ -214,7 +264,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_SQISIGN_V.final_round_evaluations() },
             sqisign::level_v::Fp2505,
             RadicalPublicKey<_>,
-        >(c, "Fp2505 (SQISign V) (Radical Public Key)");
+        >(c);
         test_prove_verify::<
             { CFG_SQISIGN_V.variable_count() },
             { CFG_SQISIGN_V.path_length() },
@@ -229,7 +279,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_SQISIGN_V.final_round_evaluations() },
             sqisign::level_v::Fp2505,
             JInvariantPublicKey<_>,
-        >(c, "Fp2505 (SQISign V) (J-invariant Public Key)");
+        >(c);
     }
     {
         const CFG_P434: RunForParamsConfig = RunForParamsConfig {
@@ -251,7 +301,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_P434.final_round_evaluations() },
             p434::Fp2434,
             RadicalPublicKey<_>,
-        >(c, "Fp2434 (path length 1024, λ=128) (Radical Public Key)");
+        >(c);
         test_prove_verify::<
             { CFG_P434.variable_count() },
             { CFG_P434.path_length() },
@@ -266,10 +316,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_P434.final_round_evaluations() },
             p434::Fp2434,
             JInvariantPublicKey<_>,
-        >(
-            c,
-            "Fp2434 (path length 1024, λ=128) (J-Invariant Public Key)",
-        );
+        >(c);
     }
     {
         const CFG_P503: RunForParamsConfig = RunForParamsConfig {
@@ -291,7 +338,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_P503.final_round_evaluations() },
             p503::Fp2503,
             RadicalPublicKey<_>,
-        >(c, "Fp2503 (path length 1024, λ=128) (Radical Public Key)");
+        >(c);
         test_prove_verify::<
             { CFG_P503.variable_count() },
             { CFG_P503.path_length() },
@@ -306,10 +353,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_P503.final_round_evaluations() },
             p503::Fp2503,
             JInvariantPublicKey<_>,
-        >(
-            c,
-            "Fp2503 (path length 1024, λ=128) (J-Invariant Public Key)",
-        );
+        >(c);
     }
     {
         const CFG_P610: RunForParamsConfig = RunForParamsConfig {
@@ -331,7 +375,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_P610.final_round_evaluations() },
             p610::Fp2610,
             RadicalPublicKey<_>,
-        >(c, "Fp2610 (path length 1024, λ=192) (Radical Public Key)");
+        >(c);
         test_prove_verify::<
             { CFG_P610.variable_count() },
             { CFG_P610.path_length() },
@@ -346,10 +390,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_P610.final_round_evaluations() },
             p610::Fp2610,
             JInvariantPublicKey<_>,
-        >(
-            c,
-            "Fp2610 (path length 1024, λ=192) (J-Invariant Public Key)",
-        );
+        >(c);
     }
     {
         const CFG_P751: RunForParamsConfig = RunForParamsConfig {
@@ -371,7 +412,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_P751.final_round_evaluations() },
             p751::Fp2751,
             RadicalPublicKey<_>,
-        >(c, "Fp2751 (path length 2048, λ=256) (Radical Public Key)");
+        >(c);
         test_prove_verify::<
             { CFG_P751.variable_count() },
             { CFG_P751.path_length() },
@@ -386,10 +427,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             { CFG_P751.final_round_evaluations() },
             p751::Fp2751,
             JInvariantPublicKey<_>,
-        >(
-            c,
-            "Fp2751 (path length 2048, λ=256) (J-Invariant Public Key)",
-        );
+        >(c);
     }
 }
 

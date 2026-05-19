@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 pub mod algebra {
     pub mod coset;
     pub mod field;

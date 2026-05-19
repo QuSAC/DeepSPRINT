@@ -1,19 +1,12 @@
-use std::hash::Hash;
-use std::iter::{Product, Sum};
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use std::iter::Sum;
 
 use crate::algebra::field::FftField;
 
-use super::MyField;
-use ark_ff::{Fp2ConfigWrapper, Fp512};
+use ark_ff::Fp512;
 use ark_ff::{
-    fp2, AdditiveGroup, Field, Fp256, Fp2Config, MontBackend, MontConfig, MontFp, UniformRand,
+    fp2, AdditiveGroup, Field, Fp2Config, MontBackend, MontConfig, MontFp,
 };
-use ark_serialize::{CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Valid};
-use halo2curves::ff_ext::inverse;
-use num_traits::ops::mul_add;
 use num_traits::Zero;
-use num_traits::One;
 
 #[derive(MontConfig)]
 #[modulus = "864175120484581453683482079962486176185193500155369104423588921177379322250834082489183304374038697487834084609675858746433355728113743766078731283595263"]

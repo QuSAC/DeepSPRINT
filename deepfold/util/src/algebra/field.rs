@@ -1,5 +1,5 @@
 use crate::merkle_tree::MERKLE_ROOT_SIZE;
-use ark_ff::{Field, Fp2, PrimeField, Fp2Config, Fp2ConfigWrapper, QuadExtConfig, QuadExtField};
+use ark_ff::Field;
 use ark_serialize::CanonicalSerialize;
 use rand::RngCore;
 use std::{

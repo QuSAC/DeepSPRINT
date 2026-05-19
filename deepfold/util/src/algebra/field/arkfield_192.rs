@@ -1,18 +1,11 @@
-use std::cmp;
-use std::hash::Hash;
-use std::iter::{Product, Sum};
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use std::iter::Sum;
 
 use crate::algebra::field::FftField;
 
-use super::MyField;
-use ark_ff::{Fp2ConfigWrapper, Fp384};
+use ark_ff::Fp384;
 use ark_ff::{
-    fp2, AdditiveGroup, Field, Fp2Config, MontBackend, MontConfig, MontFp, UniformRand,
+    fp2, AdditiveGroup, Fp2Config, MontBackend, MontConfig, MontFp,
 };
-use ark_serialize::{CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags, Valid};
-use num_traits::Zero;
-use num_traits::One;
 
 #[derive(MontConfig)]
 #[modulus = "21240143965243898950369170053983666816800796950485279844440876913226209392447715095215502903023899837622322901024767"]
