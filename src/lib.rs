@@ -2,6 +2,7 @@
 use rayon::prelude::*;
 
 mod keys;
+pub mod field;
 pub mod polynomials;
 
 pub use keys::{
@@ -139,7 +140,7 @@ pub fn run_for_params<
         FINAL_ROUND_EVALUATIONS,
         F,
         PK::PK<F>,
-    >(&public_key, &private_key, &random_oracle, mask_check_mode)?;
+    >(&public_key, &private_key, &random_oracle, mask_check_mode, &interpolate_cosets(LOG_2_PATH_LENGTH + 2))?;
 
     println!(
         "Proof size: {} (NARG: {}, PCS: {})",
@@ -160,7 +161,7 @@ pub fn run_for_params<
         FINAL_ROUND_EVALUATIONS,
         F,
         PK::PK<F>,
-    >(&public_key, proof, &random_oracle, mask_check_mode)?;
+    >(&public_key, proof, &random_oracle, mask_check_mode, &interpolate_cosets(LOG_2_PATH_LENGTH + 2))?;
 
     assert!(verified);
 
@@ -290,6 +291,7 @@ pub fn prove<
     private_key: &PrivateKey<F>,
     random_oracle: &RandomOracle<F>,
     mask_check_mode: MaskCheckMode,
+    cosets: &Vec<Coset<F>>
 ) -> Result<Proof<F>, Box<dyn Error>> {
     // Sanity checking and parameter generation
     debug_assert_eq!(private_key.len(), PATH_LENGTH);
@@ -340,7 +342,7 @@ pub fn prove<
         .collect::<Vec<_>>();
     let polynomial = interpolate_polynomial(&polynomial_evaluations);
     let (prover, commitment) =
-        deepfold_commit::<LOG_2_PATH_LENGTH, F>(polynomial, random_oracle, polynomial_evaluations);
+        deepfold_commit::<LOG_2_PATH_LENGTH, F>(polynomial, random_oracle, polynomial_evaluations, cosets);
     let mut commitment_out = Vec::new();
     let commitment = SerializableCommit::from(commitment);
     commitment.serialize_compressed(&mut commitment_out)?;
@@ -430,7 +432,7 @@ pub fn prove<
     })
 }
 
-fn interpolate_cosets<F: FftField>(variable_num: usize) -> Vec<Coset<F>> {
+pub fn interpolate_cosets<F: FftField>(variable_num: usize) -> Vec<Coset<F>> {
     use util::CODE_RATE;
     let mut interpolate_cosets = vec![Coset::new(1 << (variable_num + CODE_RATE), F::from(1))];
     for i in 1..variable_num + 1 {
@@ -443,13 +445,14 @@ pub fn deepfold_commit<const LOG_2_PATH_LENGTH: usize, F: FftField>(
     polynomial: MultilinearPolynomial<F>,
     random_oracle: &RandomOracle<F>,
     hypercube_interpolation: Vec<F>,
+    cosets: &Vec<Coset<F>>
 ) -> (Prover<F>, Commit<F>) {
     use util::STEP;
     debug_assert_eq!(polynomial.variable_num(), 2 + LOG_2_PATH_LENGTH);
     let variable_num = polynomial.variable_num();
     let prover = Prover::new_with_interpolation(
         variable_num,
-        &interpolate_cosets(variable_num),
+        cosets,
         polynomial,
         random_oracle,
         STEP,
@@ -520,6 +523,7 @@ pub fn verify_pok<
     proof: Proof<F>,
     random_oracle: &RandomOracle<F>,
     mask_check_mode: MaskCheckMode,
+    cosets: &Vec<Coset<F>>
 ) -> Result<bool, Box<dyn Error>> {
     assert_eq!(VARIABLE_COUNT, LOG_2_PATH_LENGTH * 2 + 1);
 
@@ -623,7 +627,7 @@ pub fn verify_pok<
     let mut verifier = deepfold::verifier::Verifier::new(
         &mut StdRng::from_entropy(),
         LOG_2_PATH_LENGTH + 2,
-        &interpolate_cosets(LOG_2_PATH_LENGTH + 2),
+        &cosets,
         commitment,
         random_oracle,
         util::STEP,
@@ -631,7 +635,7 @@ pub fn verify_pok<
     verifier.set_open_point(&eval_point);
     let commitment_verifies = verifier.verify(proof.final_evaluation_proof);
 
-    let q_value = Q::<0, F>::direct_eval(i, j, &k);
+    let q_value = Q::<0, F>::succinct_direct_eval(i, j, &k);
     let p_value = x
         * e_0
         * q_value

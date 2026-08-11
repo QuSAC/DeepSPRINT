@@ -88,6 +88,31 @@ impl<const EVALS: usize, F: Field> Q<EVALS, F> {
         }
     }
 
+    pub fn succinct_direct_eval(i: &[F], j: &[F], k: &[F]) -> F {
+        let mut prods = i.iter().zip(j.iter().zip(k.iter())).rev()
+        .map(|(i, (j, k))| {
+            let ik = *i * k;
+            let mimk = F::ONE - i - k + ik;
+            let ikj = ik * j;
+            let mimkj = mimk * j;
+            let mimkmj = mimk - mimkj;
+            (
+                ik,
+                ikj,
+                mimkj,
+                mimkmj
+            )
+        });
+        let (ik_1, ikj_1, mimkj_1, _mimkmj_1) = prods.next().unwrap();
+        let mut q = mimkj_1;
+        let mut prod = ik_1 - ikj_1;
+        for (ik_w, ikj_w, mimkj_w, mimkmj_w) in prods {
+            q = mimkj_w * prod + (ikj_w + mimkmj_w) * q;
+            prod *= ik_w - ikj_w;
+        }
+        q
+    }
+
     /// Compute Q directly in case all variables are fixed
     pub fn direct_eval(i: &[F], j: &[F], k: &[F]) -> F {
         (0..(1 << i.len()) - 1)
@@ -241,6 +266,42 @@ mod test {
             Q::<EVALS, Fp2256>::new_gray_codes(&k),
             Q::<EVALS, _>::new(&k)
         );
+    }
+
+    #[test]
+    fn test_succinct_direct_eval_eq_1() {
+        const EVALS: usize = 2 << 5;
+        let i = [Fp2256::from(1)];
+        let j = [Fp2256::from(5)];
+        let k = [Fp2256::from(2)];
+        assert_eq!(
+            Q::<EVALS, Fp2256>::direct_eval(&i, &j, &k),
+            Q::<EVALS, Fp2256>::succinct_direct_eval(&i, &j, &k)
+        )
+    }
+
+    #[test]
+    fn test_succinct_direct_eval_eq_2() {
+        const EVALS: usize = 2 << 5;
+        let i = [Fp2256::from(1), Fp2256::from(5)];
+        let j = [Fp2256::from(5), Fp2256::from(3)];
+        let k = [Fp2256::from(2), Fp2256::from(7)];
+        assert_eq!(
+            Q::<EVALS, Fp2256>::direct_eval(&i, &j, &k),
+            Q::<EVALS, Fp2256>::succinct_direct_eval(&i, &j, &k)
+        )
+    }
+
+    #[test]
+    fn test_succinct_direct_eval_eq_3() {
+        const EVALS: usize = 2 << 5;
+        let i = [Fp2256::from(1), 2.into(), 3.into(), 4.into(), 5.into(), 7.into()];
+        let j = [Fp2256::from(5), 6.into(), 8.into(), 3.into(), 8.into(), 3.into()];
+        let k = [Fp2256::from(2), 1.into(), 6.into(), 5.into(), 6.into(), 5.into()];
+        assert_eq!(
+            Q::<EVALS, Fp2256>::direct_eval(&i, &j, &k),
+            Q::<EVALS, Fp2256>::succinct_direct_eval(&i, &j, &k)
+        )
     }
 
     #[test]

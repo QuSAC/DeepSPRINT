@@ -2,8 +2,7 @@ use ark_ff::Field;
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use polynomial_proving::{
-    expand_keys, prove, verify_pok, CompressedPrivateKey, JInvariantPublicKey, PublicKey,
-    RadicalPublicKey, RunForParamsConfig,
+    CompressedPrivateKey, JInvariantPublicKey, PublicKey, RadicalPublicKey, RunForParamsConfig, expand_keys, interpolate_cosets, prove, verify_pok,
 };
 use util::{
     algebra::field::{p434, p503, p610, p751, sqisign, FftField},
@@ -99,8 +98,14 @@ fn test_prove_verify<
         SECURITY_BITS / CODE_RATE,
     );
 
+    let precomputation_id = id_for_function("precomputation");
     let prove_id = id_for_function("prove");
     let verify_id = id_for_function("verify");
+
+    let cosets = interpolate_cosets(LOG_2_PATH_LENGTH + 2);
+    c.bench_function(&precomputation_id, |b| {
+        b.iter(|| interpolate_cosets::<F>(LOG_2_PATH_LENGTH + 2))
+    });
 
     c.bench_function(&prove_id, |b| {
         b.iter(|| {
@@ -121,6 +126,7 @@ fn test_prove_verify<
                 black_box(&private_key),
                 black_box(&random_oracle),
                 polynomial_proving::MaskCheckMode::Additional,
+                &cosets
             )
         })
     });
@@ -142,6 +148,7 @@ fn test_prove_verify<
         black_box(&private_key),
         black_box(&random_oracle),
         polynomial_proving::MaskCheckMode::Additional,
+        &cosets
     )
     .unwrap();
 
@@ -164,6 +171,7 @@ fn test_prove_verify<
                 black_box(proof.clone()),
                 black_box(&random_oracle),
                 polynomial_proving::MaskCheckMode::Additional,
+                &cosets
             )
         })
     });

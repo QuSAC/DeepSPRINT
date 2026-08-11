@@ -33,6 +33,23 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| eq.eval(black_box(&point)));
     });
 
+
+    // Measure Q direct evaluation vs. the succinct version
+    let mut i = Vec::new();
+    let mut j = Vec::new();
+    let mut k = Vec::new();
+    for l in 0..8 {
+        i.push(Fp2256::from(8141241u32 * l + 124));
+        j.push(Fp2256::from(81412u32 * l + 13144));
+        k.push(Fp2256::from(814121441u32 * l + 11244));
+        c.bench_function(&format!("Q eval direct {}", l), |b| {
+            b.iter(|| Q::<{1 << 8}, Fp2256>::direct_eval(&i, &j, &k));
+        });
+        c.bench_function(&format!("Q eval direct succinct {}", l), |b| {
+            b.iter(|| Q::<{1 << 8}, Fp2256>::succinct_direct_eval(&i, &j, &k));
+        });
+    }
+
     let vals: [Fp2256; 1 << 9] = array::from_fn(|i| Fp2256::from(i as u32));
     let multilinear_extension = HypercubeEvalPoly::new(&vals, 9);
     c.bench_function("multilinear extension eval", |b| {

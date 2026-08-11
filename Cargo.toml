@@ -21,6 +21,11 @@ bitvec = "1"
 deepfold = { path = "deepfold/deepfold" }
 util = { path = "deepfold/util" }
 rayon = { version = "1.12", optional = true }
+curve25519-dalek = { version = "4.1.1", features = [
+    "serde",
+    "alloc",
+    "rand_core",
+], default-features = false }
 
 [features]
 default = [] # Add "rayon" here if you want it to be enabled by default
@@ -35,6 +40,10 @@ harness = false
 
 [[bench]]
 name = "my_benchmark"
+harness = false
+
+[[bench]]
+name = "spartan_comparison"
 harness = false
 
 [build]
