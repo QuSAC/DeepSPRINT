@@ -1,6 +1,6 @@
-use super::{polynomial::Polynomial};
+use super::polynomial::Polynomial;
 use crate::{algebra::field::FftField, batch_bit_reverse};
-use ark_ff::{Field};
+use ark_ff::Field;
 
 #[derive(Debug, Clone, Copy)]
 struct Radix2Domain<T: Field> {
@@ -86,6 +86,37 @@ fn _fft<T: Field>(a: &mut Vec<T>, omega: T) {
 }
 
 use std::sync::Arc;
+
+pub trait CosetsSizeMeasurer {
+    fn size_in_memory(&self) -> usize;
+}
+
+impl<T: FftField> CosetsSizeMeasurer for Vec<Coset<T>> {
+    fn size_in_memory(&self) -> usize {
+        self.iter().map(|a| a.size_in_memory()).sum()
+    }
+}
+
+impl<T: FftField> CosetsSizeMeasurer for Vec<T> {
+    fn size_in_memory(&self) -> usize {
+        self.iter().map(|a| a.uncompressed_size()).sum()
+    }
+}
+
+impl<T: FftField> CosetsSizeMeasurer for Coset<T> {
+    fn size_in_memory(&self) -> usize {
+        self.elements.size_in_memory()
+            + self.elements_inv.size_in_memory()
+            + self.fft_eval_domain.size_in_memory()
+            + self.shift.uncompressed_size()
+    }
+}
+
+impl<T: FftField> CosetsSizeMeasurer for Radix2Domain<T> {
+    fn size_in_memory(&self) -> usize {
+        size_of::<usize>() + self.omega.uncompressed_size()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Coset<T: FftField> {

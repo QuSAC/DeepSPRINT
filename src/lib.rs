@@ -20,6 +20,7 @@ use spongefish::codecs::arkworks_algebra::{
 use spongefish::{
     ByteDomainSeparator, BytesToUnitDeserialize, BytesToUnitSerialize, DefaultHash, DomainSeparator,
 };
+use util::algebra::coset::CosetsSizeMeasurer;
 use std::error::Error;
 use std::{array, default};
 use util::algebra::field::FftField;
@@ -128,6 +129,10 @@ pub fn run_for_params<
         SECURITY_BITS / CODE_RATE,
     );
 
+    let cosets = interpolate_cosets(LOG_2_PATH_LENGTH + 2);
+
+    println!("Precomputation size: {}", cosets.size_in_memory());
+
     let proof = prove::<
         VARIABLE_COUNT,
         PATH_LENGTH,
@@ -140,7 +145,7 @@ pub fn run_for_params<
         FINAL_ROUND_EVALUATIONS,
         F,
         PK::PK<F>,
-    >(&public_key, &private_key, &random_oracle, mask_check_mode, &interpolate_cosets(LOG_2_PATH_LENGTH + 2))?;
+    >(&public_key, &private_key, &random_oracle, mask_check_mode, &cosets)?;
 
     println!(
         "Proof size: {} (NARG: {}, PCS: {})",
@@ -161,7 +166,7 @@ pub fn run_for_params<
         FINAL_ROUND_EVALUATIONS,
         F,
         PK::PK<F>,
-    >(&public_key, proof, &random_oracle, mask_check_mode, &interpolate_cosets(LOG_2_PATH_LENGTH + 2))?;
+    >(&public_key, proof, &random_oracle, mask_check_mode, &cosets)?;
 
     assert!(verified);
 
